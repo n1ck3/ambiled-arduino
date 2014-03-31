@@ -12,6 +12,7 @@
 #   make more robust
 #   some kind of auto-negotiation between device and this script about number of LEDs
 #   handle locking issues; if the device is unable to be opened, clear it and open
+#   autodetect depending on OS (tty.usb*, ttyUSB* etc)
 #
 # ------------------------------------------------------------------------------
 import os
@@ -25,9 +26,9 @@ import colorsys   # HSV to RGB conversion
 # serial port speed, must be equal to that running on the Arduino
 SPEED = 115200
 # run what program? see below for valid numbers
-PROGRAM = 4
+PROGRAM = 6
 # number of LEDs in the strip
-num_leds = 1
+num_leds = 300
 # inter-step sleep, in seconds
 SLEEP = 0.05
 
@@ -82,7 +83,8 @@ def main():
   print('quit by Ctrl+C')
   try:
     serialdevice = serial.Serial(port, SPEED, timeout=0)
-  except:
+  except Exception as e:
+    print(e)
     die('Opening serial port %s failed, quitting.' %(port), -2)
 
   # some modes: this uses a HSV to RGB conversion
@@ -121,8 +123,9 @@ def main():
         # start = time.clock() * 1000
         try:
           serialdevice.write(st)
-        except:
+        except Exception as e:
           serialdevice.close()
+          print(e)
           die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
         # read data from the Arduino
         # data = serialdevice.read(serialdevice.inWaiting())
@@ -151,8 +154,9 @@ def main():
       st = ''.join(chr(b) for b in rgblist)
       try:
         serialdevice.write(st)
-      except:
+      except Exception as e:
         serialdevice.close()
+        print(e)
         die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
       sleep(SLEEP)
         
@@ -185,8 +189,9 @@ def main():
       # send over serial to the connected device
       try:
         serialdevice.write(st)
-      except:
+      except Exception as e:
         serialdevice.close()
+        print(e)
         die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
       sleep(SLEEP)
 
@@ -197,30 +202,115 @@ def main():
       while True:
         try:
           r, g, b = (255, 0, 0)
-          rgblist = [ord(c) for c in sync_string] + [g, r, b] * NUM_LEDS
+          rgblist = [ord(c) for c in sync_string] + [g, r, b] * num_leds
           st = ''.join(chr(b) for b in rgblist)
           sleep(SLEEP)
           serialdevice.write(st)
           print("setting red")
 
           r, g, b = (0, 255, 0)
-          rgblist = [ord(c) for c in sync_string] + [g, r, b] * NUM_LEDS
+          rgblist = [ord(c) for c in sync_string] + [g, r, b] * num_leds
           st = ''.join(chr(b) for b in rgblist)
           sleep(SLEEP)
           serialdevice.write(st)
           print("setting green")
 
           r, g, b = (0, 0, 255)
-          rgblist = [ord(c) for c in sync_string] + [g, r, b] * NUM_LEDS
+          rgblist = [ord(c) for c in sync_string] + [g, r, b] * num_leds
           st = ''.join(chr(b) for b in rgblist)
           sleep(SLEEP)
           serialdevice.write(st)
           print("setting blue")
-
-        except:
+        except Exception as e:
           serialdevice.close()
+          print(e)
           die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
 
+  elif PROGRAM == 5:
+      SLEEP = 0.05
+      sync_string = "START"
+      pos = 1
+
+      while True:
+        pos += 1
+        if pos == num_leds:
+          pos = 1
+        r, g, b = (255, 0, 0)
+        rgblist = [ord(c) for c in sync_string]
+        rgblist += [0, 0, 0] * (pos)
+        rgblist += [g, r, b]
+        rgblist += [0, 0, 0] * (num_leds - pos)
+        st = ''.join(chr(b) for b in rgblist)
+
+        try:
+          sleep(SLEEP)
+          serialdevice.write(st)
+        except Exception as e:
+          serialdevice.close()
+          print(e)
+          die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
+
+  elif PROGRAM == 6:
+    SLEEP = 0.05
+    sync_string = "START"
+    pos = 99
+    while True:
+      h = 0.0
+      brightness = 1.0
+      led = 1
+      while(h < 1.0):
+        rgb = colorsys.hsv_to_rgb(h, 1.0, 1.0) # returns float[3]
+        rgb = [x*brightness for x in rgb]
+        h += 0.01
+        if h >= 1.0:
+          h = 0.0
+
+        rgblist = [ord(c) for c in sync_string]
+        rgblist += [0, 0, 0] * (pos)
+        rgblist += [int(rgb[1] * 255), int(rgb[0] * 255), int(rgb[2] * 255)]
+        rgblist += [0, 0, 0] * (num_leds - pos)
+        st = ''.join(chr(b) for b in rgblist)
+        try:
+          sleep(SLEEP)
+          serialdevice.write(st)
+        except Exception as e:
+          serialdevice.close()
+          print(e)
+          die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
+          
+"""
+  elif PROGRAM == 7:
+    SLEEP = 1.0/25
+    sync_string = "START"
+    pos = 1
+    num_leds = 100 # temp as broke stripper
+    brightness = 1.0
+
+    while True:
+      pos += 1
+      if pos == num_leds:
+        pos = 1
+      h = 0.0
+      while(h < 1.0):
+        rgb = colorsys.hsv_to_rgb(h, 1.0, 1.0) # returns float[3]
+        rgb = [x*brightness for x in rgb]
+        h += 0.01
+        if h >= 1.0:
+          h = 0.0
+
+        rgblist = [ord(c) for c in sync_string]
+        rgblist += [0, 0, 0] * (pos)
+        rgblist += [int(rgb[1] * 255), int(rgb[0] * 255), int(rgb[2] * 255)]
+        rgblist += [0, 0, 0] * (num_leds - pos)
+        st = ''.join(chr(b) for b in rgblist)
+        try:
+          sleep(SLEEP)
+          serialdevice.write(st)
+        except Exception as e:
+          serialdevice.close()
+          print(e)
+          die('Unexpected serial communication malfunction (did you unplug it?). Quitting.')
+"""
 
 # ------------------------------------------------------------------------------
 if __name__=="__main__":
